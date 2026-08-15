@@ -62,6 +62,7 @@ namespace FerramentaAFS
             statusStrip1.BackColor = Color.FromArgb(35, 38, 44);
             toolStripStatusLabel1.ForeColor = texto;
             menuStrip1.Renderer = new DarkMenuRenderer();
+            AplicarTemaMenuContextoV120(Color.FromArgb(35, 38, 44), Color.Gainsboro, true);
 
             AplicarCorLabels(this, texto, secundario);
 
@@ -107,6 +108,7 @@ namespace FerramentaAFS
             statusStrip1.BackColor = Color.FromArgb(230, 233, 238);
             toolStripStatusLabel1.ForeColor = texto;
             menuStrip1.Renderer = new ToolStripProfessionalRenderer();
+            AplicarTemaMenuContextoV120(Color.White, texto, false);
 
             AplicarCorLabels(this, texto, secundario);
 

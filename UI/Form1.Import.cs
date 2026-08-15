@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace FerramentaAFS
@@ -29,50 +30,67 @@ namespace FerramentaAFS
             }
 
             string nomeAtual = string.IsNullOrWhiteSpace(entry.FileName) ? $"File_{entry.Index:D4}" : entry.FileName;
-
             using OpenFileDialog dialog = new OpenFileDialog
             {
                 Title = Tr($"Importar sobre {nomeAtual}", $"Import over {nomeAtual}"),
-                Filter = "Todos os arquivos (*.*)|*.*",
+                Filter = Tr("Todos os arquivos (*.*)|*.*", "All files (*.*)|*.*"),
                 FileName = Path.GetFileName(nomeAtual)
             };
+            if (dialog.ShowDialog() != DialogResult.OK) return;
+            ImportarArquivoSobreEntrada(entry, dialog.FileName);
+        }
 
-            if (dialog.ShowDialog() != DialogResult.OK)
-                return;
+        private async void ImportarArquivoSobreEntrada(AfsEntry entry, string caminhoNovoArquivo)
+        {
+            if (_afsPath == null || entry.IsEmpty) return;
+            string nomeAtual = string.IsNullOrWhiteSpace(entry.FileName) ? $"File_{entry.Index:D4}" : entry.FileName;
+            FileInfo novoArquivo = new FileInfo(caminhoNovoArquivo);
 
-            FileInfo novoArquivo = new FileInfo(dialog.FileName);
-
-            if (novoArquivo.Length > entry.AllocatedSize)
+            if (!novoArquivo.Exists)
             {
-                MessageBox.Show(
-                    Tr($"O arquivo é maior que o espaço disponível desta entrada.\n\nArquivo novo: {novoArquivo.Length:N0} bytes\nMax Size: {entry.AllocatedSize:N0} bytes\nExcesso: {(novoArquivo.Length - entry.AllocatedSize):N0} bytes\n\nNesta etapa, a importação é In-Place e não move as entradas seguintes.", $"The file is larger than the space available for this entry.\n\nNew file: {novoArquivo.Length:N0} bytes\nMax Size: {entry.AllocatedSize:N0} bytes\nExcess: {(novoArquivo.Length - entry.AllocatedSize):N0} bytes\n\nAt this stage, import is In-Place and does not move subsequent entries."),
-                    Tr("Arquivo grande demais", "File too large"),
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                MessageBox.Show(Tr("O arquivo selecionado não existe.", "The selected file does not exist."), Tr("Erro", "Error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
-            if (ArquivoEhIdenticoAoAfs(entry, dialog.FileName))
+            if (ArquivoEhIdenticoAoAfs(entry, caminhoNovoArquivo))
             {
                 MessageBox.Show(Tr("O arquivo selecionado já é idêntico ao conteúdo atual da entrada. Nenhuma alteração foi feita.", "The selected file is already identical to the current entry content. No changes were made."), Tr("Arquivo idêntico", "Identical file"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            DialogResult confirmacao = MessageBox.Show(
-                Tr($"Substituir a entrada selecionada?\n\nNome: {nomeAtual}\nCurrent Size: {ObterTamanhoReal(entry):N0} bytes\nNovo tamanho: {novoArquivo.Length:N0} bytes\nMax Size: {entry.AllocatedSize:N0} bytes\n\nO conteúdo será substituído no mesmo slot físico. A alocação atual será preservada.", $"Replace the selected entry?\n\nName: {nomeAtual}\nCurrent Size: {ObterTamanhoReal(entry):N0} bytes\nNew size: {novoArquivo.Length:N0} bytes\nMax Size: {entry.AllocatedSize:N0} bytes\n\nThe content will be replaced in the same physical slot. Current allocation will be preserved."),
-                Tr("Confirmar importação", "Confirm import"),
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
+            bool precisaRealocar = novoArquivo.Length > entry.AllocatedSize;
+            string modoPt = precisaRealocar
+                ? $"O novo arquivo excede o Max Size em {(novoArquivo.Length - entry.AllocatedSize):N0} bytes. O AFS será reconstruído automaticamente e as entradas seguintes serão realocadas com alinhamento 0x800." + (_isoAfsEntry != null ? " Se o AFS encostar no próximo extent da ISO, o Manager poderá abrir espaço deslocando os dados posteriores sem alterar o LBA inicial do AFS." : "")
+                : "O conteúdo será substituído no mesmo slot físico. A alocação atual será preservada.";
+            string modoEn = precisaRealocar
+                ? $"The new file exceeds Max Size by {(novoArquivo.Length - entry.AllocatedSize):N0} bytes. The AFS will be rebuilt automatically and subsequent entries will be relocated with 0x800 alignment." + (_isoAfsEntry != null ? " If the AFS reaches the next ISO extent, the Manager can insert space by shifting subsequent data without changing the AFS starting LBA." : "")
+                : "The content will be replaced in the same physical slot. Current allocation will be preserved.";
 
-            if (confirmacao != DialogResult.Yes)
-                return;
+            DialogResult confirmacao = MessageBox.Show(
+                Tr($"Substituir a entrada selecionada?\n\nNome: {nomeAtual}\nCurrent Size: {ObterTamanhoReal(entry):N0} bytes\nNovo tamanho: {novoArquivo.Length:N0} bytes\nMax Size atual: {entry.AllocatedSize:N0} bytes\n\n{modoPt}", $"Replace the selected entry?\n\nName: {nomeAtual}\nCurrent Size: {ObterTamanhoReal(entry):N0} bytes\nNew size: {novoArquivo.Length:N0} bytes\nCurrent Max Size: {entry.AllocatedSize:N0} bytes\n\n{modoEn}"),
+                Tr("Confirmar importação", "Confirm import"), MessageBoxButtons.YesNo, precisaRealocar ? MessageBoxIcon.Warning : MessageBoxIcon.Question);
+            if (confirmacao != DialogResult.Yes) return;
 
             try
             {
-                ImportarEntradaInPlace(entry, dialog.FileName);
-                ReabrirAfsAtualPreservandoBusca(entry.Index);
-
+                if (precisaRealocar)
+                {
+                    if (_isoAfsEntry != null)
+                        await ImportarEntradaComRealocacaoNaIsoAsync(entry, caminhoNovoArquivo);
+                    else
+                        ImportarEntradaComRealocacao(entry, caminhoNovoArquivo);
+                }
+                else
+                {
+                    MarcarAlteracaoInterna(60);
+                    ImportarEntradaInPlace(entry, caminhoNovoArquivo);
+                    ReabrirAfsAtualPreservandoBusca(entry.Index);
+                }
                 MostrarSucesso(Tr($"Importação concluída.\n\n{nomeAtual}\nNovo Current Size: {novoArquivo.Length:N0} bytes", $"Import complete.\n\n{nomeAtual}\nNew Current Size: {novoArquivo.Length:N0} bytes"), Tr("Importação concluída", "Import complete"));
+            }
+            catch (OperationCanceledException)
+            {
+                toolStripStatusLabel1.Text = Tr("Importação cancelada.", "Import canceled.");
             }
             catch (Exception ex)
             {

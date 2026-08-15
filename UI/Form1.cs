@@ -1,3 +1,4 @@
+using System.Drawing;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -11,6 +12,7 @@ namespace FerramentaAFS
     {
         private const uint EMPTY_SENTINEL = 0xFFFFF801;
         private const int AFS_ALIGNMENT = 0x800;
+        private const string APP_VERSION = "1.3.3";
 
         private string? _afsPath;
         private readonly List<AfsEntry> _entries = new();
@@ -20,10 +22,18 @@ namespace FerramentaAFS
         public Form1()
         {
             InitializeComponent();
+            var appIconPath = Path.Combine(AppContext.BaseDirectory, "Images", "icon.ico");
+            if (File.Exists(appIconPath)) Icon = new Icon(appIconPath);
             ConfigurarBatchIndexado();
             ConfigurarMenuCompactacao();
             ConfigurarIso();
             ConfigurarPreferencias();
+            ConfigurarRecentes();
+            ConfigurarDragDrop();
+            ConfigurarVerificacaoIntegridade();
+            ConfigurarAcoesV120();
+            ConfigurarComparacaoAfs();
+            ConfigurarDeteccaoExterna();
 
             txtBuscar.TextChanged += TxtBuscar_TextChanged;
             dgvArquivos.SelectionChanged += DgvArquivos_SelectionChanged;
@@ -102,14 +112,27 @@ namespace FerramentaAFS
             lblTamanhoAfs.Text = FormatarBytes(baseStream.Length);
             lblTocOffset.Text = tocValida ? $"0x{_tocOffset:X8}" : "Não encontrada";
             lblTocSize.Text = tocValida ? $"{_tocSize:N0} bytes" : "-";
-            Text = _isoAfsEntry != null
-                ? $"Ferramenta AFS - {Path.GetFileName(_containerPath)} :: {_isoAfsEntry.FullPath}"
-                : $"Ferramenta AFS - {Path.GetFileName(_containerPath)}";
+            AtualizarTituloJanela();
 
             AtualizarGrid();
+            AtualizarMonitorArquivoExterno();
             toolStripStatusLabel1.Text = _isoAfsEntry != null
                 ? $"ISO aberta: {_isoAfsEntry.FullPath} - {fileCount:N0} entradas"
                 : $"AFS aberto: {fileCount:N0} entradas";
+        }
+
+        private void AtualizarTituloJanela()
+        {
+            string baseTitle = $"RE4 PS2 ISO/AFS Manager v{APP_VERSION}";
+            if (string.IsNullOrWhiteSpace(_containerPath))
+            {
+                Text = baseTitle;
+                return;
+            }
+
+            Text = _isoAfsEntry != null
+                ? $"{baseTitle} - {Path.GetFileName(_containerPath)} :: {_isoAfsEntry.FullPath}"
+                : $"{baseTitle} - {Path.GetFileName(_containerPath)}";
         }
 
         private void LerFileNameToc(Stream fs, BinaryReader br)
@@ -243,6 +266,10 @@ namespace FerramentaAFS
                     case ".dat": return "DAT";
                     case ".bin": return "BIN";
                 }
+
+                // If the TOC already provides an extension, preserve/reuse it as
+                // the displayed type instead of replacing a known extension with "?".
+                return ext.TrimStart('.').ToUpperInvariant();
             }
 
             if (length >= 4)
@@ -284,9 +311,7 @@ namespace FerramentaAFS
                     entry.FileType,
                     $"0x{entry.Offset:X8}",
                     entry.IsEmpty ? "-" : currentSize.ToString("N0"),
-                    entry.IsEmpty ? "-" : entry.StoredSize.ToString("N0"),
                     entry.IsEmpty ? "-" : entry.AllocatedSize.ToString("N0"),
-                    entry.IsEmpty ? "-" : entry.CompactSize.ToString("N0"),
                     entry.IsEmpty ? "-" : entry.ExcessAllocation.ToString("N0"),
                     entry.IsEmpty ? "EMPTY" : entry.ExcessAllocation > 0 ? "WASTE" : "OK"
                 );
@@ -319,16 +344,14 @@ namespace FerramentaAFS
             if (entry.IsEmpty)
             {
                 lblCurrentSize.Text = "EMPTY";
-                lblStoredSize.Text = lblAllocatedSize.Text = lblPadding.Text = lblCompactSize.Text = lblExcess.Text = lblTimestamp.Text = lblMetadata.Text = "-";
+                lblAllocatedSize.Text = lblPadding.Text = lblExcess.Text = lblTimestamp.Text = lblMetadata.Text = "-";
                 return;
             }
 
             uint currentSize = entry.ActualSize > 0 ? entry.ActualSize : entry.StoredSize;
             lblCurrentSize.Text = $"{currentSize:N0} bytes";
-            lblStoredSize.Text = $"{entry.StoredSize:N0} bytes";
             lblAllocatedSize.Text = $"{entry.AllocatedSize:N0} bytes";
             lblPadding.Text = $"{entry.PaddingSize:N0} bytes";
-            lblCompactSize.Text = $"{entry.CompactSize:N0} bytes";
             lblExcess.Text = $"{entry.ExcessAllocation:N0} bytes";
             lblTimestamp.Text = FormatarTimestamp(entry);
             lblMetadata.Text = entry.TocMetadata != null ? BitConverter.ToString(entry.TocMetadata).Replace("-", " ") : "-";
@@ -552,8 +575,8 @@ namespace FerramentaAFS
             _tocSize = 0;
 
             lblArquivo.Text = lblQuantidade.Text = lblTamanhoAfs.Text = lblTocOffset.Text = lblTocSize.Text = "-";
-            lblIndex.Text = lblNome.Text = lblTipo.Text = lblOffset.Text = lblCurrentSize.Text = lblStoredSize.Text = "-";
-            lblAllocatedSize.Text = lblPadding.Text = lblCompactSize.Text = lblExcess.Text = lblTimestamp.Text = lblMetadata.Text = "-";
+            lblIndex.Text = lblNome.Text = lblTipo.Text = lblOffset.Text = lblCurrentSize.Text = "-";
+            lblAllocatedSize.Text = lblPadding.Text = lblExcess.Text = lblTimestamp.Text = lblMetadata.Text = "-";
             toolStripStatusLabel1.Text = "Pronto";
         }
 

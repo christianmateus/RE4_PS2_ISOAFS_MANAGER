@@ -19,6 +19,7 @@ namespace FerramentaAFS
         private ToolStripMenuItem? _menuIso;
         private ToolStripMenuItem? _menuEscolherAfsIso;
         private ToolStripMenuItem? _menuRebuildNaIso;
+        private ToolStripMenuItem? _menuExportarAfsIso;
 
         private void ConfigurarIso()
         {
@@ -30,9 +31,12 @@ namespace FerramentaAFS
             _menuIso = new ToolStripMenuItem("ISO");
             _menuEscolherAfsIso = new ToolStripMenuItem("Escolher outro AFS da ISO...");
             _menuRebuildNaIso = new ToolStripMenuItem("Compactar / Rebuild diretamente na ISO...");
+            _menuExportarAfsIso = new ToolStripMenuItem("Exportar AFS da ISO...");
             _menuEscolherAfsIso.Click += MenuEscolherAfsIso_Click;
+            _menuExportarAfsIso.Click += MenuExportarAfsIso_Click;
             _menuRebuildNaIso.Click += MenuRebuildNaIso_Click;
             _menuIso.DropDownItems.Add(_menuEscolherAfsIso);
+            _menuIso.DropDownItems.Add(_menuExportarAfsIso);
             _menuIso.DropDownItems.Add(new ToolStripSeparator());
             _menuIso.DropDownItems.Add(_menuRebuildNaIso);
             _menuIso.Enabled = false;
@@ -42,6 +46,7 @@ namespace FerramentaAFS
 
         private Stream AbrirAfsStream(FileAccess access, FileShare share)
         {
+            if (access != FileAccess.Read) MarcarAlteracaoInterna();
             if (_containerPath == null) throw new InvalidOperationException(Tr("Nenhum AFS está aberto.", "No AFS is open."));
             return new BoundedFileStream(_containerPath, _afsBaseOffset, _afsLogicalLength, access, share);
         }
@@ -54,6 +59,7 @@ namespace FerramentaAFS
             _containerPath = path; _afsBaseOffset = 0; _afsLogicalLength = new FileInfo(path).Length; _isoAfsEntry = null; _isoFiles.Clear();
             if (_menuIso != null) _menuIso.Enabled = false;
             AbrirAfsAtual();
+            AdicionarRecente(path);
         }
 
         private void AbrirAfsDaIso(string isoPath, IsoFileEntry entry)
@@ -72,22 +78,28 @@ namespace FerramentaAFS
             };
             if (dialog.ShowDialog() != DialogResult.OK) return;
 
-            try
-            {
-                toolStripStatusLabel1.Text = Tr("Lendo ISO9660...", "Reading ISO9660...");
-                _isoFiles = Iso9660Reader.ReadAllFiles(dialog.FileName);
-                List<IsoFileEntry> afs = _isoFiles.Where(x => !x.IsDirectory && x.Name.EndsWith(".AFS", StringComparison.OrdinalIgnoreCase)).OrderByDescending(x => x.Size).ToList();
-                if (afs.Count == 0)
-                {
-                    MessageBox.Show(Tr("Nenhum arquivo .AFS foi encontrado na ISO.", "No .AFS file was found in the ISO."), "ISO", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-                IsoFileEntry? escolhido = EscolherAfs(afs);
-                if (escolhido != null) AbrirAfsDaIso(dialog.FileName, escolhido);
-            }
+            try { AbrirIso(dialog.FileName); }
             catch (Exception ex)
             {
                 MessageBox.Show(Tr($"Não foi possível abrir a ISO.\n\n{ex.Message}", $"Could not open the ISO.\n\n{ex.Message}"), Tr("Erro", "Error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void AbrirIso(string path)
+        {
+            toolStripStatusLabel1.Text = Tr("Lendo ISO9660...", "Reading ISO9660...");
+            _isoFiles = Iso9660Reader.ReadAllFiles(path);
+            List<IsoFileEntry> afs = _isoFiles.Where(x => !x.IsDirectory && x.Name.EndsWith(".AFS", StringComparison.OrdinalIgnoreCase)).OrderByDescending(x => x.Size).ToList();
+            if (afs.Count == 0)
+            {
+                MessageBox.Show(Tr("Nenhum arquivo .AFS foi encontrado na ISO.", "No .AFS file was found in the ISO."), "ISO", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            IsoFileEntry? escolhido = EscolherAfs(afs);
+            if (escolhido != null)
+            {
+                AbrirAfsDaIso(path, escolhido);
+                AdicionarRecente(path);
             }
         }
 
@@ -111,6 +123,70 @@ namespace FerramentaAFS
             form.Controls.Add(list); form.Controls.Add(cancel); form.Controls.Add(ok); form.AcceptButton = ok; form.CancelButton = cancel;
             if (form.ShowDialog(this) != DialogResult.OK || list.SelectedIndex < 0) return null;
             return afs[list.SelectedIndex];
+        }
+
+
+        private async void MenuExportarAfsIso_Click(object? sender, EventArgs e)
+        {
+            if (_containerPath == null || _isoAfsEntry == null)
+            {
+                MessageBox.Show(Tr("Abra um AFS diretamente de uma ISO primeiro.", "Open an AFS directly from an ISO first."), "ISO", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string nome = Path.GetFileName(_isoAfsEntry.FullPath);
+            if (string.IsNullOrWhiteSpace(nome) || !nome.EndsWith(".afs", StringComparison.OrdinalIgnoreCase))
+                nome = "exported.afs";
+
+            using SaveFileDialog dialog = new SaveFileDialog
+            {
+                Title = Tr("Exportar AFS da ISO", "Export AFS from ISO"),
+                Filter = Tr("Arquivos AFS (*.afs)|*.afs|Todos os arquivos (*.*)|*.*", "AFS files (*.afs)|*.afs|All files (*.*)|*.*"),
+                FileName = nome,
+                AddExtension = true,
+                DefaultExt = "afs"
+            };
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+            string isoPath = _containerPath;
+            long offset = _isoAfsEntry.DataOffset;
+            long length = _isoAfsEntry.Size;
+            string destino = dialog.FileName;
+
+            try
+            {
+                await RebuildProgressForm.RunAsync(this, Tr("Exportando AFS", "Exporting AFS"), async progress =>
+                {
+                    await Task.Run(() =>
+                    {
+                        progress.Report(new RebuildProgressInfo { Percent = 2, Stage = Tr("Preparando exportação", "Preparing export"), Detail = _isoAfsEntry.FullPath });
+                        using FileStream iso = new FileStream(isoPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                        using FileStream output = new FileStream(destino, FileMode.Create, FileAccess.Write, FileShare.None);
+                        iso.Position = offset;
+                        byte[] buffer = new byte[4 * 1024 * 1024];
+                        long remaining = length;
+                        long copied = 0;
+                        while (remaining > 0)
+                        {
+                            int want = (int)Math.Min(buffer.Length, remaining);
+                            int read = iso.Read(buffer, 0, want);
+                            if (read <= 0) throw new EndOfStreamException(Tr("A ISO terminou antes do fim do AFS.", "The ISO ended before the end of the AFS."));
+                            output.Write(buffer, 0, read);
+                            remaining -= read; copied += read;
+                            int pct = 3 + (int)(copied * 95L / Math.Max(1L, length));
+                            progress.Report(new RebuildProgressInfo { Percent = Math.Min(98, pct), Stage = Tr("Exportando AFS", "Exporting AFS"), Detail = $"{FormatarBytes(copied)} / {FormatarBytes(length)}" });
+                        }
+                        output.Flush(true);
+                        progress.Report(new RebuildProgressInfo { Percent = 100, Stage = Tr("Concluído", "Complete"), Detail = Tr("AFS exportado com sucesso.", "AFS exported successfully.") });
+                    });
+                });
+                MostrarSucesso(Tr($"AFS exportado com sucesso.\n\n{destino}", $"AFS exported successfully.\n\n{destino}"), Tr("Exportação concluída", "Export complete"));
+            }
+            catch (Exception ex)
+            {
+                try { if (File.Exists(destino)) File.Delete(destino); } catch { }
+                MessageBox.Show(this, Tr($"Não foi possível exportar o AFS.\n\n{ex.Message}", $"Could not export the AFS.\n\n{ex.Message}"), Tr("Erro", "Error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private async void MenuRebuildNaIso_Click(object? sender, EventArgs e)
@@ -146,6 +222,7 @@ namespace FerramentaAFS
 
             string isoPath = _containerPath;
             IsoFileEntry isoEntry = _isoAfsEntry;
+            MarcarAlteracaoInterna(180);
             long oldIsoEntrySize = isoEntry.Size;
             string temp = Path.Combine(Path.GetTempPath(), $"afs_rebuild_{Guid.NewGuid():N}.afs");
 

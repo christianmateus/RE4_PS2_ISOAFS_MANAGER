@@ -1,1 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net6.0-windows</TargetFramework><Nullable>enable</Nullable><UseWindowsForms>true</UseWindowsForms><ImplicitUsings>disable</ImplicitUsings></PropertyGroup><ItemGroup><Compile Update="UI\Form1.Designer.cs"><DependentUpon>Form1.cs</DependentUpon></Compile><EmbeddedResource Update="UI\Form1.resx"><DependentUpon>Form1.cs</DependentUpon></EmbeddedResource></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net6.0-windows</TargetFramework><Nullable>enable</Nullable><UseWindowsForms>true</UseWindowsForms><ImplicitUsings>disable</ImplicitUsings><ApplicationIcon>Images\icon.ico</ApplicationIcon><PackageIcon>icon.png</PackageIcon></PropertyGroup><ItemGroup>
+  <Content Include="Images\icon.ico">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </Content>
+</ItemGroup><ItemGroup><Compile Update="UI\Form1.Designer.cs"><DependentUpon>Form1.cs</DependentUpon></Compile><EmbeddedResource Update="UI\Form1.resx"><DependentUpon>Form1.cs</DependentUpon></EmbeddedResource></ItemGroup><ItemGroup>
+  <None Update="Images\icon.png">
+    <Pack>True</Pack>
+    <PackagePath>\</PackagePath>
+  </None>
+</ItemGroup></Project>

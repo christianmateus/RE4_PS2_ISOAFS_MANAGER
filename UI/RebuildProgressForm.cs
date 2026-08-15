@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -22,6 +23,8 @@ namespace FerramentaAFS
 
         private RebuildProgressForm(string title)
         {
+            var appIconPath = Path.Combine(AppContext.BaseDirectory, "Images", "icon.ico");
+            if (File.Exists(appIconPath)) Icon = new Icon(appIconPath);
             Text = title;
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;

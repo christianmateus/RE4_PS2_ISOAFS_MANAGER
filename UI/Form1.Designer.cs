@@ -49,14 +49,10 @@ namespace FerramentaAFS
         private System.Windows.Forms.Label lblOffset;
         private System.Windows.Forms.Label lblCurrentSizeTitulo;
         private System.Windows.Forms.Label lblCurrentSize;
-        private System.Windows.Forms.Label lblStoredSizeTitulo;
-        private System.Windows.Forms.Label lblStoredSize;
         private System.Windows.Forms.Label lblAllocatedSizeTitulo;
         private System.Windows.Forms.Label lblAllocatedSize;
         private System.Windows.Forms.Label lblPaddingTitulo;
         private System.Windows.Forms.Label lblPadding;
-        private System.Windows.Forms.Label lblCompactSizeTitulo;
-        private System.Windows.Forms.Label lblCompactSize;
         private System.Windows.Forms.Label lblExcessTitulo;
         private System.Windows.Forms.Label lblExcess;
         private System.Windows.Forms.Label lblTimestampTitulo;
@@ -116,14 +112,10 @@ namespace FerramentaAFS
             lblOffset = new System.Windows.Forms.Label();
             lblCurrentSizeTitulo = new System.Windows.Forms.Label();
             lblCurrentSize = new System.Windows.Forms.Label();
-            lblStoredSizeTitulo = new System.Windows.Forms.Label();
-            lblStoredSize = new System.Windows.Forms.Label();
             lblAllocatedSizeTitulo = new System.Windows.Forms.Label();
             lblAllocatedSize = new System.Windows.Forms.Label();
             lblPaddingTitulo = new System.Windows.Forms.Label();
             lblPadding = new System.Windows.Forms.Label();
-            lblCompactSizeTitulo = new System.Windows.Forms.Label();
-            lblCompactSize = new System.Windows.Forms.Label();
             lblExcessTitulo = new System.Windows.Forms.Label();
             lblExcess = new System.Windows.Forms.Label();
             lblTimestampTitulo = new System.Windows.Forms.Label();
@@ -139,9 +131,7 @@ namespace FerramentaAFS
             colTipo = new System.Windows.Forms.DataGridViewTextBoxColumn();
             colOffset = new System.Windows.Forms.DataGridViewTextBoxColumn();
             colCurrent = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            colStored = new System.Windows.Forms.DataGridViewTextBoxColumn();
             colAllocated = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            colCompact = new System.Windows.Forms.DataGridViewTextBoxColumn();
             colExcess = new System.Windows.Forms.DataGridViewTextBoxColumn();
             colStatus = new System.Windows.Forms.DataGridViewTextBoxColumn();
             menuStrip1.SuspendLayout();
@@ -280,7 +270,7 @@ namespace FerramentaAFS
             dataGridViewCellStyle1.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             dgvArquivos.ColumnHeadersDefaultCellStyle = dataGridViewCellStyle1;
             dgvArquivos.ColumnHeadersHeight = 32;
-            dgvArquivos.Columns.AddRange(new System.Windows.Forms.DataGridViewColumn[] { colIndex, colNome, colTipo, colOffset, colCurrent, colStored, colAllocated, colCompact, colExcess, colStatus });
+            dgvArquivos.Columns.AddRange(new System.Windows.Forms.DataGridViewColumn[] { colIndex, colNome, colTipo, colOffset, colCurrent, colAllocated, colExcess, colStatus });
             dataGridViewCellStyle2.Alignment = System.Windows.Forms.DataGridViewContentAlignment.MiddleLeft;
             dataGridViewCellStyle2.BackColor = System.Drawing.Color.FromArgb(31, 34, 40);
             dataGridViewCellStyle2.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
@@ -292,7 +282,7 @@ namespace FerramentaAFS
             dgvArquivos.EnableHeadersVisualStyles = false;
             dgvArquivos.GridColor = System.Drawing.Color.FromArgb(52, 57, 65);
             dgvArquivos.Location = new System.Drawing.Point(14, 175);
-            dgvArquivos.MultiSelect = false;
+            dgvArquivos.MultiSelect = true;
             dgvArquivos.Name = "dgvArquivos";
             dgvArquivos.ReadOnly = true;
             dgvArquivos.RowHeadersVisible = false;
@@ -434,14 +424,10 @@ namespace FerramentaAFS
             groupEntry.Controls.Add(lblOffset);
             groupEntry.Controls.Add(lblCurrentSizeTitulo);
             groupEntry.Controls.Add(lblCurrentSize);
-            groupEntry.Controls.Add(lblStoredSizeTitulo);
-            groupEntry.Controls.Add(lblStoredSize);
             groupEntry.Controls.Add(lblAllocatedSizeTitulo);
             groupEntry.Controls.Add(lblAllocatedSize);
             groupEntry.Controls.Add(lblPaddingTitulo);
             groupEntry.Controls.Add(lblPadding);
-            groupEntry.Controls.Add(lblCompactSizeTitulo);
-            groupEntry.Controls.Add(lblCompactSize);
             groupEntry.Controls.Add(lblExcessTitulo);
             groupEntry.Controls.Add(lblExcess);
             groupEntry.Controls.Add(lblTimestampTitulo);
@@ -551,30 +537,11 @@ namespace FerramentaAFS
             lblCurrentSize.Text = "-";
             // 
             // 
-            // lblStoredSizeTitulo
-            // 
-            lblStoredSizeTitulo.AutoSize = true;
-            lblStoredSizeTitulo.ForeColor = System.Drawing.Color.Silver;
-            lblStoredSizeTitulo.Location = new System.Drawing.Point(16, 202);
-            lblStoredSizeTitulo.Name = "lblStoredSizeTitulo";
-            lblStoredSizeTitulo.TabIndex = 0;
-            lblStoredSizeTitulo.Text = "Stored Size:";
-            // 
-            // lblStoredSize
-            // 
-            lblStoredSize.AutoSize = true;
-            lblStoredSize.ForeColor = System.Drawing.Color.WhiteSmoke;
-            lblStoredSize.Location = new System.Drawing.Point(125, 202);
-            lblStoredSize.Name = "lblStoredSize";
-            lblStoredSize.TabIndex = 1;
-            lblStoredSize.Text = "-";
-            // 
-            // 
             // lblAllocatedSizeTitulo
             // 
             lblAllocatedSizeTitulo.AutoSize = true;
             lblAllocatedSizeTitulo.ForeColor = System.Drawing.Color.Silver;
-            lblAllocatedSizeTitulo.Location = new System.Drawing.Point(16, 233);
+            lblAllocatedSizeTitulo.Location = new System.Drawing.Point(16, 202);
             lblAllocatedSizeTitulo.Name = "lblAllocatedSizeTitulo";
             lblAllocatedSizeTitulo.TabIndex = 0;
             lblAllocatedSizeTitulo.Text = "Max Size:";
@@ -583,7 +550,7 @@ namespace FerramentaAFS
             // 
             lblAllocatedSize.AutoSize = true;
             lblAllocatedSize.ForeColor = System.Drawing.Color.WhiteSmoke;
-            lblAllocatedSize.Location = new System.Drawing.Point(125, 233);
+            lblAllocatedSize.Location = new System.Drawing.Point(125, 202);
             lblAllocatedSize.Name = "lblAllocatedSize";
             lblAllocatedSize.TabIndex = 1;
             lblAllocatedSize.Text = "-";
@@ -593,7 +560,7 @@ namespace FerramentaAFS
             // 
             lblPaddingTitulo.AutoSize = true;
             lblPaddingTitulo.ForeColor = System.Drawing.Color.Silver;
-            lblPaddingTitulo.Location = new System.Drawing.Point(16, 264);
+            lblPaddingTitulo.Location = new System.Drawing.Point(16, 233);
             lblPaddingTitulo.Name = "lblPaddingTitulo";
             lblPaddingTitulo.TabIndex = 0;
             lblPaddingTitulo.Text = "Padding total:";
@@ -602,36 +569,17 @@ namespace FerramentaAFS
             // 
             lblPadding.AutoSize = true;
             lblPadding.ForeColor = System.Drawing.Color.WhiteSmoke;
-            lblPadding.Location = new System.Drawing.Point(125, 264);
+            lblPadding.Location = new System.Drawing.Point(125, 233);
             lblPadding.Name = "lblPadding";
             lblPadding.TabIndex = 1;
             lblPadding.Text = "-";
-            // 
-            // 
-            // lblCompactSizeTitulo
-            // 
-            lblCompactSizeTitulo.AutoSize = true;
-            lblCompactSizeTitulo.ForeColor = System.Drawing.Color.Silver;
-            lblCompactSizeTitulo.Location = new System.Drawing.Point(16, 295);
-            lblCompactSizeTitulo.Name = "lblCompactSizeTitulo";
-            lblCompactSizeTitulo.TabIndex = 0;
-            lblCompactSizeTitulo.Text = "Compact Size:";
-            // 
-            // lblCompactSize
-            // 
-            lblCompactSize.AutoSize = true;
-            lblCompactSize.ForeColor = System.Drawing.Color.WhiteSmoke;
-            lblCompactSize.Location = new System.Drawing.Point(125, 295);
-            lblCompactSize.Name = "lblCompactSize";
-            lblCompactSize.TabIndex = 1;
-            lblCompactSize.Text = "-";
             // 
             // 
             // lblExcessTitulo
             // 
             lblExcessTitulo.AutoSize = true;
             lblExcessTitulo.ForeColor = System.Drawing.Color.Silver;
-            lblExcessTitulo.Location = new System.Drawing.Point(16, 326);
+            lblExcessTitulo.Location = new System.Drawing.Point(16, 264);
             lblExcessTitulo.Name = "lblExcessTitulo";
             lblExcessTitulo.TabIndex = 0;
             lblExcessTitulo.Text = "Waste real:";
@@ -640,7 +588,7 @@ namespace FerramentaAFS
             // 
             lblExcess.AutoSize = true;
             lblExcess.ForeColor = System.Drawing.Color.FromArgb(255, 190, 90);
-            lblExcess.Location = new System.Drawing.Point(125, 326);
+            lblExcess.Location = new System.Drawing.Point(125, 264);
             lblExcess.Name = "lblExcess";
             lblExcess.TabIndex = 1;
             lblExcess.Text = "-";
@@ -650,7 +598,7 @@ namespace FerramentaAFS
             // 
             lblTimestampTitulo.AutoSize = true;
             lblTimestampTitulo.ForeColor = System.Drawing.Color.Silver;
-            lblTimestampTitulo.Location = new System.Drawing.Point(16, 357);
+            lblTimestampTitulo.Location = new System.Drawing.Point(16, 295);
             lblTimestampTitulo.Name = "lblTimestampTitulo";
             lblTimestampTitulo.TabIndex = 0;
             lblTimestampTitulo.Text = "Timestamp:";
@@ -659,7 +607,7 @@ namespace FerramentaAFS
             // 
             lblTimestamp.AutoSize = true;
             lblTimestamp.ForeColor = System.Drawing.Color.WhiteSmoke;
-            lblTimestamp.Location = new System.Drawing.Point(125, 357);
+            lblTimestamp.Location = new System.Drawing.Point(125, 295);
             lblTimestamp.Name = "lblTimestamp";
             lblTimestamp.TabIndex = 1;
             lblTimestamp.Text = "-";
@@ -669,7 +617,7 @@ namespace FerramentaAFS
             // 
             lblMetadataTitulo.AutoSize = true;
             lblMetadataTitulo.ForeColor = System.Drawing.Color.Silver;
-            lblMetadataTitulo.Location = new System.Drawing.Point(16, 395);
+            lblMetadataTitulo.Location = new System.Drawing.Point(16, 333);
             lblMetadataTitulo.Name = "lblMetadataTitulo";
             lblMetadataTitulo.Size = new System.Drawing.Size(85, 15);
             lblMetadataTitulo.TabIndex = 22;
@@ -681,7 +629,7 @@ namespace FerramentaAFS
             lblMetadata.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             lblMetadata.Font = new System.Drawing.Font("Consolas", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
             lblMetadata.ForeColor = System.Drawing.Color.FromArgb(190, 220, 255);
-            lblMetadata.Location = new System.Drawing.Point(16, 420);
+            lblMetadata.Location = new System.Drawing.Point(16, 358);
             lblMetadata.Name = "lblMetadata";
             lblMetadata.Size = new System.Drawing.Size(302, 65);
             lblMetadata.TabIndex = 23;
@@ -760,26 +708,12 @@ namespace FerramentaAFS
             colCurrent.ReadOnly = true;
             colCurrent.Width = 108;
             // 
-            // colStored
-            // 
-            colStored.HeaderText = "Stored Size";
-            colStored.Name = "colStored";
-            colStored.ReadOnly = true;
-            colStored.Width = 108;
-            // 
             // colAllocated
             // 
             colAllocated.HeaderText = "Max Size";
             colAllocated.Name = "colAllocated";
             colAllocated.ReadOnly = true;
             colAllocated.Width = 108;
-            // 
-            // colCompact
-            // 
-            colCompact.HeaderText = "Compact Size";
-            colCompact.Name = "colCompact";
-            colCompact.ReadOnly = true;
-            colCompact.Width = 108;
             // 
             // colExcess
             // 
@@ -813,7 +747,7 @@ namespace FerramentaAFS
             MinimumSize = new System.Drawing.Size(1180, 700);
             Name = "Form1";
             StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            Text = "Ferramenta AFS";
+            Text = "RE4 PS2 ISO/AFS Manager v1.3.3";
             menuStrip1.ResumeLayout(false);
             menuStrip1.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)dgvArquivos).EndInit();
@@ -845,9 +779,7 @@ namespace FerramentaAFS
         private System.Windows.Forms.DataGridViewTextBoxColumn colTipo;
         private System.Windows.Forms.DataGridViewTextBoxColumn colOffset;
         private System.Windows.Forms.DataGridViewTextBoxColumn colCurrent;
-        private System.Windows.Forms.DataGridViewTextBoxColumn colStored;
         private System.Windows.Forms.DataGridViewTextBoxColumn colAllocated;
-        private System.Windows.Forms.DataGridViewTextBoxColumn colCompact;
         private System.Windows.Forms.DataGridViewTextBoxColumn colExcess;
         private System.Windows.Forms.DataGridViewTextBoxColumn colStatus;
     }

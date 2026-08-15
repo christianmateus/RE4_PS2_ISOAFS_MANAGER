@@ -127,6 +127,296 @@ namespace FerramentaAFS
             };
         }
 
+
+
+        /// <summary>
+        /// Inserts sector-aligned space at <paramref name="shiftStart"/> by moving the ISO tail forward.
+        /// This keeps all data before shiftStart at the same LBA (notably the AFS being expanded) and
+        /// updates ISO9660 directory records for regular files that were moved.
+        ///
+        /// For safety this routine only operates when all directory extents, directory records and path
+        /// tables are located before shiftStart. This is the normal layout used by the RE4 PS2 ISO and
+        /// avoids having to rewrite directory/path-table structures while they are being moved.
+        /// </summary>
+        public static void InsertSpaceBeforeExtent(string isoPath, long shiftStart, long bytesToInsert, Action<long, long>? progress = null)
+        {
+            if (string.IsNullOrWhiteSpace(isoPath)) throw new ArgumentNullException(nameof(isoPath));
+            if (bytesToInsert <= 0) return;
+            if ((shiftStart % SectorSize) != 0 || (bytesToInsert % SectorSize) != 0)
+                throw new InvalidDataException("O deslocamento e o espaço inserido na ISO precisam estar alinhados a 0x800.");
+
+            List<IsoFileEntry> entries = ReadAllFiles(isoPath);
+            long oldLength = new FileInfo(isoPath).Length;
+            if (shiftStart < 0 || shiftStart > oldLength)
+                throw new InvalidDataException("O ponto de expansão está fora dos limites da ISO.");
+
+            // Directory records must remain at their original physical positions so their LBA fields
+            // can be patched safely after the tail move.
+            IsoFileEntry? directoryAfterBoundary = entries
+                .Where(x => x.IsDirectory && x.DataOffset >= shiftStart)
+                .OrderBy(x => x.DataOffset)
+                .FirstOrDefault();
+            if (directoryAfterBoundary != null)
+                throw new InvalidDataException($"Não é seguro expandir a ISO automaticamente porque o diretório '{directoryAfterBoundary.FullPath}' está depois do ponto de expansão.");
+
+            IsoFileEntry? recordAfterBoundary = entries
+                .Where(x => x.DirectoryRecordOffset >= shiftStart)
+                .OrderBy(x => x.DirectoryRecordOffset)
+                .FirstOrDefault();
+            if (recordAfterBoundary != null)
+                throw new InvalidDataException($"Não é seguro expandir a ISO automaticamente porque registros de diretório estão depois do ponto de expansão ('{recordAfterBoundary.FullPath}').");
+
+            ValidateDescriptorStructuresBeforeBoundary(isoPath, shiftStart);
+            List<IsoLbaReference> lbaReferences = CollectDirectoryLbaReferences(isoPath, shiftStart);
+
+            using (FileStream fs = new FileStream(isoPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                const int BufferSize = 8 * 1024 * 1024;
+                byte[] buffer = new byte[BufferSize];
+                long readEnd = oldLength;
+                long totalToMove = Math.Max(0, oldLength - shiftStart);
+                long moved = 0;
+                fs.SetLength(checked(oldLength + bytesToInsert));
+
+                // Copy backwards so source bytes are never overwritten before they are read.
+                while (readEnd > shiftStart)
+                {
+                    int count = (int)Math.Min(buffer.Length, readEnd - shiftStart);
+                    long source = readEnd - count;
+                    fs.Position = source;
+                    ReadExactly(fs, buffer, 0, count);
+                    fs.Position = checked(source + bytesToInsert);
+                    fs.Write(buffer, 0, count);
+                    readEnd = source;
+                    moved += count;
+                    progress?.Invoke(moved, Math.Max(1L, totalToMove));
+                }
+
+                // Clear the newly inserted sector range. The expanded AFS will occupy part/all of it.
+                fs.Position = shiftStart;
+                long remaining = bytesToInsert;
+                Array.Clear(buffer, 0, buffer.Length);
+                while (remaining > 0)
+                {
+                    int count = (int)Math.Min(buffer.Length, remaining);
+                    fs.Write(buffer, 0, count);
+                    remaining -= count;
+                }
+                fs.Flush(true);
+            }
+
+            uint deltaLba = checked((uint)(bytesToInsert / SectorSize));
+            uint shiftStartLba = checked((uint)(shiftStart / SectorSize));
+            PatchDirectoryLbaReferences(isoPath, lbaReferences, shiftStartLba, deltaLba);
+
+            UpdateVolumeSpaceSize(isoPath);
+
+            // Final structural read catches stale/broken directory records before the caller writes AFS data.
+            _ = ReadAllFiles(isoPath);
+        }
+
+        private sealed class IsoLbaReference
+        {
+            public long RecordOffset { get; set; }
+            public uint Lba { get; set; }
+        }
+
+        private static List<IsoLbaReference> CollectDirectoryLbaReferences(string isoPath, long shiftStart)
+        {
+            List<IsoLbaReference> result = new List<IsoLbaReference>();
+            HashSet<string> visited = new HashSet<string>();
+            using FileStream fs = new FileStream(isoPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            byte[] descriptor = new byte[SectorSize];
+
+            for (int index = 16; ; index++)
+            {
+                long descriptorOffset = (long)index * SectorSize;
+                fs.Position = descriptorOffset;
+                ReadExactly(fs, descriptor, 0, descriptor.Length);
+                byte type = descriptor[0];
+                if (Encoding.ASCII.GetString(descriptor, 1, 5) != "CD001")
+                    throw new InvalidDataException("Descritor ISO9660 inválido durante a coleta de referências.");
+
+                if (type == 1 || type == 2)
+                {
+                    int rootLength = descriptor[156];
+                    if (rootLength >= 34)
+                    {
+                        uint rootLba = BitConverter.ToUInt32(descriptor, 158);
+                        uint rootSize = BitConverter.ToUInt32(descriptor, 166);
+                        result.Add(new IsoLbaReference { RecordOffset = descriptorOffset + 156, Lba = rootLba });
+                        CollectDirectoryLbaReferencesRecursive(fs, rootLba, rootSize, shiftStart, result, visited);
+                    }
+                }
+
+                if (type == 255) break;
+            }
+
+            return result
+                .GroupBy(x => x.RecordOffset)
+                .Select(x => x.First())
+                .ToList();
+        }
+
+        private static void CollectDirectoryLbaReferencesRecursive(
+            FileStream fs, uint directoryLba, uint directorySize, long shiftStart,
+            List<IsoLbaReference> result, HashSet<string> visited)
+        {
+            long start = (long)directoryLba * SectorSize;
+            if (start >= shiftStart)
+                throw new InvalidDataException("Não é seguro expandir a ISO automaticamente porque um diretório está depois do ponto de expansão.");
+
+            string key = $"{directoryLba}:{directorySize}";
+            if (!visited.Add(key)) return;
+
+            long end = start + directorySize;
+            long pos = start;
+            byte[] header = new byte[34];
+
+            while (pos < end)
+            {
+                fs.Position = pos;
+                int length = fs.ReadByte();
+                if (length < 0) break;
+                if (length == 0)
+                {
+                    pos = ((pos / SectorSize) + 1) * SectorSize;
+                    continue;
+                }
+                if (length < 34 || pos + length > end)
+                    throw new InvalidDataException("Registro de diretório ISO9660 inválido durante a expansão.");
+
+                header[0] = (byte)length;
+                ReadExactly(fs, header, 1, 33);
+                uint lba = BitConverter.ToUInt32(header, 2);
+                uint size = BitConverter.ToUInt32(header, 10);
+                byte flags = header[25];
+                int nameLength = header[32];
+                int firstIdentifier = nameLength > 0 ? header[33] : -1;
+                bool special = nameLength == 1 && (firstIdentifier == 0 || firstIdentifier == 1);
+
+                result.Add(new IsoLbaReference { RecordOffset = pos, Lba = lba });
+
+                if ((flags & 0x02) != 0 && !special)
+                    CollectDirectoryLbaReferencesRecursive(fs, lba, size, shiftStart, result, visited);
+
+                pos += length;
+            }
+        }
+
+        private static void PatchDirectoryLbaReferences(
+            string isoPath, List<IsoLbaReference> references, uint shiftStartLba, uint deltaLba)
+        {
+            using FileStream fs = new FileStream(isoPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            using BinaryWriter bw = new BinaryWriter(fs, Encoding.ASCII, leaveOpen: true);
+
+            foreach (IsoLbaReference reference in references)
+            {
+                if (reference.Lba < shiftStartLba) continue;
+                uint newLba = checked(reference.Lba + deltaLba);
+                fs.Position = reference.RecordOffset + 2;
+                bw.Write(newLba);
+                fs.Position = reference.RecordOffset + 6;
+                WriteUInt32BigEndian(bw, newLba);
+            }
+            fs.Flush(true);
+        }
+
+        private static void ValidateDescriptorStructuresBeforeBoundary(string isoPath, long shiftStart)
+        {
+            using FileStream fs = new FileStream(isoPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            byte[] sector = new byte[SectorSize];
+
+            for (int index = 16; ; index++)
+            {
+                long descriptorOffset = (long)index * SectorSize;
+                if (descriptorOffset + SectorSize > fs.Length)
+                    throw new InvalidDataException("Conjunto de descritores ISO9660 incompleto.");
+
+                fs.Position = descriptorOffset;
+                ReadExactly(fs, sector, 0, sector.Length);
+                byte type = sector[0];
+                if (Encoding.ASCII.GetString(sector, 1, 5) != "CD001")
+                    throw new InvalidDataException("Descritor ISO9660 inválido durante a expansão da ISO.");
+
+                if (type == 1 || type == 2)
+                {
+                    uint pathTableSize = BitConverter.ToUInt32(sector, 132);
+                    uint littlePathLba = BitConverter.ToUInt32(sector, 140);
+                    uint optionalLittlePathLba = BitConverter.ToUInt32(sector, 144);
+                    uint bigPathLba = ReadUInt32BigEndian(sector, 148);
+                    uint optionalBigPathLba = ReadUInt32BigEndian(sector, 152);
+
+                    foreach (uint lba in new[] { littlePathLba, optionalLittlePathLba, bigPathLba, optionalBigPathLba })
+                    {
+                        if (lba != 0 && pathTableSize > 0 && ((long)lba * SectorSize) >= shiftStart)
+                            throw new InvalidDataException("Não é seguro expandir a ISO automaticamente porque uma Path Table está depois do ponto de expansão.");
+                    }
+
+                    int rootLength = sector[156];
+                    if (rootLength >= 34)
+                    {
+                        uint rootLba = BitConverter.ToUInt32(sector, 158);
+                        if (((long)rootLba * SectorSize) >= shiftStart)
+                            throw new InvalidDataException("Não é seguro expandir a ISO automaticamente porque o diretório raiz está depois do ponto de expansão.");
+                    }
+                }
+
+                if (type == 255) break;
+            }
+        }
+
+        public static void UpdateFileLba(string isoPath, IsoFileEntry entry, uint newLba)
+        {
+            using FileStream fs = new FileStream(isoPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            using BinaryWriter bw = new BinaryWriter(fs, Encoding.ASCII, leaveOpen: true);
+
+            fs.Position = entry.DirectoryRecordOffset + 2;
+            bw.Write(newLba);
+            fs.Position = entry.DirectoryRecordOffset + 6;
+            WriteUInt32BigEndian(bw, newLba);
+            fs.Flush(true);
+            entry.Lba = newLba;
+        }
+
+        private static void UpdateVolumeSpaceSize(string isoPath)
+        {
+            long length = new FileInfo(isoPath).Length;
+            uint sectors = checked((uint)((length + SectorSize - 1L) / SectorSize));
+
+            using FileStream fs = new FileStream(isoPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            using BinaryWriter bw = new BinaryWriter(fs, Encoding.ASCII, leaveOpen: true);
+            byte[] sector = new byte[SectorSize];
+
+            for (int index = 16; ; index++)
+            {
+                long offset = (long)index * SectorSize;
+                fs.Position = offset;
+                ReadExactly(fs, sector, 0, sector.Length);
+                byte type = sector[0];
+                if (Encoding.ASCII.GetString(sector, 1, 5) != "CD001")
+                    throw new InvalidDataException("Descritor ISO9660 inválido ao atualizar o tamanho do volume.");
+
+                if (type == 1 || type == 2)
+                {
+                    fs.Position = offset + 80;
+                    bw.Write(sectors);
+                    WriteUInt32BigEndian(bw, sectors);
+                }
+
+                if (type == 255) break;
+            }
+            fs.Flush(true);
+        }
+
+        private static uint ReadUInt32BigEndian(byte[] data, int offset)
+        {
+            return ((uint)data[offset] << 24) |
+                   ((uint)data[offset + 1] << 16) |
+                   ((uint)data[offset + 2] << 8) |
+                   data[offset + 3];
+        }
+
         public static void UpdateFileSize(string isoPath, IsoFileEntry entry, uint newSize)
         {
             using FileStream fs = new FileStream(isoPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
