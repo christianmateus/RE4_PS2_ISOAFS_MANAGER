@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/LEIA-ME-ISO.txt
+/README-ORGANIZACAO.txt
+/RE4_PS2_ISOAFS_MANAGER.zip
